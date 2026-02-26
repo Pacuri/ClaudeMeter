@@ -332,48 +332,70 @@ struct UsagePopover: View {
     // MARK: - Footer
 
     private var footerSection: some View {
-        HStack(spacing: 16) {
-            Button {
-                if let url = URL(string: "https://claude.ai/settings/usage") {
-                    NSWorkspace.shared.open(url)
+        VStack(spacing: 0) {
+            HStack(spacing: 16) {
+                Button {
+                    if let url = URL(string: "https://claude.ai/settings/usage") {
+                        NSWorkspace.shared.open(url)
+                    }
+                } label: {
+                    Label("Usage Dashboard", systemImage: "chart.bar")
+                        .font(.system(size: 11))
                 }
-            } label: {
-                Label("Usage Dashboard", systemImage: "chart.bar")
-                    .font(.system(size: 11))
-            }
-            .buttonStyle(.plain)
+                .buttonStyle(.plain)
 
-            Spacer()
+                Spacer()
 
-            Button {
-                Task { await viewModel.refresh() }
-            } label: {
-                Image(systemName: "arrow.clockwise")
-                    .font(.system(size: 11))
-            }
-            .buttonStyle(.plain)
-
-            Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
-                    showSettings.toggle()
+                Button {
+                    Task { await viewModel.refresh() }
+                } label: {
+                    Image(systemName: "arrow.clockwise")
+                        .font(.system(size: 11))
                 }
-            } label: {
-                Label("Settings", systemImage: showSettings ? "xmark" : "gear")
-                    .font(.system(size: 11))
-            }
-            .buttonStyle(.plain)
+                .buttonStyle(.plain)
 
-            Button {
-                NSApplication.shared.terminate(nil)
-            } label: {
-                Label("Quit", systemImage: "power")
-                    .font(.system(size: 11))
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showSettings.toggle()
+                    }
+                } label: {
+                    Label("Settings", systemImage: showSettings ? "xmark" : "gear")
+                        .font(.system(size: 11))
+                }
+                .buttonStyle(.plain)
+
+                Button {
+                    NSApplication.shared.terminate(nil)
+                } label: {
+                    Label("Quit", systemImage: "power")
+                        .font(.system(size: 11))
+                }
+                .buttonStyle(.plain)
             }
-            .buttonStyle(.plain)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+
+            Divider()
+                .opacity(0.3)
+
+            HStack(spacing: 4) {
+                Text("by")
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
+                Button {
+                    if let url = URL(string: "https://nikolytics.com") {
+                        NSWorkspace.shared.open(url)
+                    }
+                } label: {
+                    Text("Nikolytics")
+                        .font(.system(size: 9, weight: .medium))
+                        .foregroundStyle(Color.claudeOrange)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.vertical, 6)
         }
-        .foregroundStyle(.secondary)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 10)
     }
 
     // MARK: - Helpers
