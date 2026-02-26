@@ -7,6 +7,7 @@ class AppSettings: ObservableObject {
     @AppStorage("refreshInterval") var refreshInterval: Double = 60
     @AppStorage("showInMenuBar") var showPercentInMenuBar: Bool = true
     @AppStorage("launchAtLogin") var launchAtLogin: Bool = false
+    @AppStorage("hasCompletedFirstLaunch") var hasCompletedFirstLaunch: Bool = false
 }
 
 // MARK: - Settings View
@@ -53,28 +54,9 @@ struct SettingsView: View {
 
             Section("Authentication") {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("ClaudeMeter reads your session cookie to fetch usage data from claude.ai.")
+                    Text("Paste your session key from claude.ai to connect.")
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
-
-                    HStack {
-                        Button {
-                            isDetecting = true
-                            Task {
-                                await viewModel.autoDetectSessionKey()
-                                isDetecting = false
-                            }
-                        } label: {
-                            if isDetecting {
-                                ProgressView()
-                                    .scaleEffect(0.6)
-                                    .frame(width: 16, height: 16)
-                            }
-                            Text("Auto-Detect from Browser")
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .disabled(isDetecting)
-                    }
                 }
 
                 Divider()

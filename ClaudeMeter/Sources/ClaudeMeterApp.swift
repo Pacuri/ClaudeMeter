@@ -5,10 +5,12 @@ import AppKit
 struct ClaudeMeterApp: App {
     @StateObject private var viewModel = ClaudeUsageViewModel()
     @StateObject private var settings = AppSettings()
+    @StateObject private var analytics = AnalyticsService()
 
     var body: some Scene {
         MenuBarExtra {
-            UsagePopover(viewModel: viewModel, settings: settings)
+            UsagePopover(viewModel: viewModel, settings: settings, analytics: analytics)
+                .task { await analytics.sendHeartbeat() }
                 .frame(width: 320, height: 500)
         } label: {
             MenuBarLabel(viewModel: viewModel)

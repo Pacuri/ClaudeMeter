@@ -1,18 +1,29 @@
 import Foundation
 
 /// Client for claude.ai web API endpoints.
-/// Uses session cookie authentication (same as browser).
+/// Supports two auth modes: session cookie (browser) or OAuth token (Claude CLI).
 actor ClaudeAPIClient {
     private let baseURL = "https://claude.ai/api"
-    private var sessionKey: String
+    private var sessionKey: String?
+    private var oauthToken: String?
     private var organizationId: String?
+
+    enum AuthMode {
+        case sessionKey(String)
+        case oauth(String)
+    }
 
     init(sessionKey: String) {
         self.sessionKey = sessionKey
     }
 
+    init(oauthToken: String) {
+        self.oauthToken = oauthToken
+    }
+
     func updateSessionKey(_ key: String) {
         self.sessionKey = key
+        self.oauthToken = nil
     }
 
     // MARK: - API Calls
@@ -100,7 +111,6 @@ actor ClaudeAPIClient {
         }
 
         var req = URLRequest(url: url)
-        req.setValue("sessionKey=\(sessionKey)", forHTTPHeaderField: "Cookie")
         req.setValue("application/json", forHTTPHeaderField: "Accept")
         req.setValue("claude.ai", forHTTPHeaderField: "Host")
         req.setValue("https://claude.ai", forHTTPHeaderField: "Origin")
@@ -108,6 +118,13 @@ actor ClaudeAPIClient {
             "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36",
             forHTTPHeaderField: "User-Agent"
         )
+
+        // Auth: OAuth token or session cookie
+        if let token = oauthToken {
+            req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        } else if let key = sessionKey {
+            req.setValue("sessionKey=\(key)", forHTTPHeaderField: "Cookie")
+        }
 
         let (data, response) = try await URLSession.shared.data(for: req)
 

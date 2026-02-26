@@ -12,9 +12,12 @@ class ClaudeUsageViewModel: ObservableObject {
     private var client: ClaudeAPIClient?
     private var refreshTimer: Timer?
     private var refreshInterval: TimeInterval = 60  // 1 minute default
+    private var loginController: LoginWindowController?
+
+    @Published var authMethod: String = ""  // "oauth", "cookie", "manual"
 
     init() {
-        loadSessionKey()
+        loadAuth()
         startAutoRefresh()
     }
 
@@ -24,28 +27,23 @@ class ClaudeUsageViewModel: ObservableObject {
 
     // MARK: - Authentication
 
+    /// Load saved session key on launch
+    func loadAuth() {
+        if let stored = UserDefaults.standard.string(forKey: "sessionKey"), !stored.isEmpty {
+            client = ClaudeAPIClient(sessionKey: stored)
+            isAuthenticated = true
+            authMethod = "manual"
+            Task { await refresh() }
+        }
+    }
+
     func setSessionKey(_ key: String) {
         let cleanKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
         UserDefaults.standard.set(cleanKey, forKey: "sessionKey")
         client = ClaudeAPIClient(sessionKey: cleanKey)
         isAuthenticated = true
+        authMethod = "manual"
         Task { await refresh() }
-    }
-
-    func loadSessionKey() {
-        if let stored = UserDefaults.standard.string(forKey: "sessionKey"), !stored.isEmpty {
-            client = ClaudeAPIClient(sessionKey: stored)
-            isAuthenticated = true
-            Task { await refresh() }
-        }
-    }
-
-    func autoDetectSessionKey() async {
-        if let key = await CookieExtractor.extractSessionKey() {
-            setSessionKey(key)
-        } else {
-            error = "Could not find session cookie. Paste it manually in Settings."
-        }
     }
 
     func logout() {
@@ -53,6 +51,7 @@ class ClaudeUsageViewModel: ObservableObject {
         client = nil
         usage = nil
         isAuthenticated = false
+        authMethod = ""
         error = nil
     }
 

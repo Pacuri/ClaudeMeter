@@ -9,19 +9,184 @@ enum CookieExtractor {
     // MARK: - Public
 
     /// Attempt to extract sessionKey from available browsers
+    /// Tries least-permission methods first, then falls back to file-based extraction
     static func extractSessionKey() async -> String? {
-        // 1. Try Chrome first (most common for claude.ai)
-        if let key = extractFromChrome() {
-            return key
-        }
-
-        // 2. Try Firefox
+        // 1. Try Firefox first (unencrypted, no permissions needed)
         if let key = extractFromFirefox() {
             return key
         }
 
-        // 3. Safari binary cookies are sandboxed and harder to read
-        //    User can paste manually via Settings
+        // 2. Try Safari via AppleScript (needs Automation permission)
+        if let key = extractFromSafariAppleScript() {
+            return key
+        }
+
+        // 3. Try Safari binary cookies (needs Full Disk Access)
+        if let key = extractFromSafari() {
+            return key
+        }
+
+        // Note: Chrome is skipped — its cookies are encrypted and require
+        // Keychain access which triggers scary system dialogs.
+
+        return nil
+    }
+
+    // MARK: - Safari (AppleScript — lightweight permission)
+
+    /// Uses AppleScript to ask Safari to run JavaScript on a claude.ai tab.
+    /// Only requires Automation permission (one-time "Allow ClaudeMeter to control Safari?" prompt).
+    /// Falls back to nil if sessionKey is httpOnly or no claude.ai tab is open.
+    private static func extractFromSafariAppleScript() -> String? {
+        let script = """
+        tell application "System Events"
+            if not (exists process "Safari") then return ""
+        end tell
+
+        tell application "Safari"
+            repeat with w in windows
+                repeat with t in tabs of w
+                    if URL of t contains "claude.ai" then
+                        set cookieStr to do JavaScript "document.cookie" in t
+                        repeat with pair in every text item of cookieStr
+                        end repeat
+                        return cookieStr
+                    end if
+                end repeat
+            end repeat
+        end tell
+        return ""
+        """
+
+        guard let appleScript = NSAppleScript(source: script) else { return nil }
+        var error: NSDictionary?
+        let result = appleScript.executeAndReturnError(&error)
+
+        if error != nil { return nil }
+
+        let cookieString = result.stringValue ?? ""
+        // Parse "sessionKey=value" from cookie string
+        for pair in cookieString.components(separatedBy: "; ") {
+            let parts = pair.components(separatedBy: "=")
+            if parts.count >= 2 && parts[0].trimmingCharacters(in: .whitespaces) == "sessionKey" {
+                let value = parts.dropFirst().joined(separator: "=")
+                if !value.isEmpty { return value }
+            }
+        }
+
+        return nil
+    }
+
+    // MARK: - Safari
+
+    /// Safari stores cookies in ~/Library/Cookies/Cookies.binarycookies
+    /// This is Apple's binary cookie format — unencrypted but binary.
+    private static func extractFromSafari() -> String? {
+        let cookiePath = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Cookies/Cookies.binarycookies")
+
+        guard FileManager.default.fileExists(atPath: cookiePath.path) else { return nil }
+
+        // Copy to temp (Safari may lock it)
+        let tempPath = FileManager.default.temporaryDirectory
+            .appendingPathComponent("claudemeter_safari_cookies.binarycookies")
+        try? FileManager.default.removeItem(at: tempPath)
+
+        do {
+            try FileManager.default.copyItem(at: cookiePath, to: tempPath)
+        } catch {
+            return nil
+        }
+        defer { try? FileManager.default.removeItem(at: tempPath) }
+
+        guard let data = try? Data(contentsOf: tempPath) else { return nil }
+        return parseBinaryCookies(data)
+    }
+
+    /// Parse Apple's binarycookies format
+    /// Format: "cook" magic, page count, page sizes, then pages of cookies
+    private static func parseBinaryCookies(_ data: Data) -> String? {
+        guard data.count > 8 else { return nil }
+
+        // Magic: "cook"
+        let magic = String(data: data[0..<4], encoding: .ascii)
+        guard magic == "cook" else { return nil }
+
+        // Number of pages (big-endian UInt32)
+        let numPages = data.readBigUInt32(at: 4)
+        guard numPages > 0, numPages < 10000 else { return nil }
+
+        // Page sizes array (each is big-endian UInt32)
+        var pageSizes: [UInt32] = []
+        for i in 0..<Int(numPages) {
+            let size = data.readBigUInt32(at: 8 + i * 4)
+            pageSizes.append(size)
+        }
+
+        // Pages start after header: 4 (magic) + 4 (count) + numPages*4 (sizes)
+        var pageOffset = 8 + Int(numPages) * 4
+
+        for pageSize in pageSizes {
+            let pageEnd = pageOffset + Int(pageSize)
+            guard pageEnd <= data.count else { break }
+
+            if let key = parseCookiePage(data, offset: pageOffset, size: Int(pageSize)) {
+                return key
+            }
+            pageOffset = pageEnd
+        }
+
+        return nil
+    }
+
+    /// Parse a single page of cookies
+    private static func parseCookiePage(_ data: Data, offset: Int, size: Int) -> String? {
+        guard size > 8 else { return nil }
+
+        // Page header: 0x00000100 (little-endian)
+        let numCookies = data.readLittleUInt32(at: offset + 4)
+        guard numCookies > 0, numCookies < 10000 else { return nil }
+
+        // Cookie offsets within the page
+        var cookieOffsets: [UInt32] = []
+        for i in 0..<Int(numCookies) {
+            let co = data.readLittleUInt32(at: offset + 8 + i * 4)
+            cookieOffsets.append(co)
+        }
+
+        for cookieOffset in cookieOffsets {
+            let absOffset = offset + Int(cookieOffset)
+            if let key = parseCookie(data, offset: absOffset) {
+                return key
+            }
+        }
+
+        return nil
+    }
+
+    /// Parse a single cookie record
+    private static func parseCookie(_ data: Data, offset: Int) -> String? {
+        guard offset + 44 <= data.count else { return nil }
+
+        // Cookie record layout (all little-endian):
+        // 0x00: size (4), 0x04: flags (4), 0x08: padding (4)
+        // 0x0C: urlOffset (4), 0x10: nameOffset (4)
+        // 0x14: pathOffset (4), 0x18: valueOffset (4)
+        // 0x1C: comment (8), 0x24: padding2 (4)
+        // 0x28: expirationDate (8), 0x30: creationDate (8)
+
+        let urlOffset = Int(data.readLittleUInt32(at: offset + 0x0C))
+        let nameOffset = Int(data.readLittleUInt32(at: offset + 0x10))
+        let valueOffset = Int(data.readLittleUInt32(at: offset + 0x18))
+
+        let url = data.readNullTerminatedString(at: offset + urlOffset)
+        let name = data.readNullTerminatedString(at: offset + nameOffset)
+        let value = data.readNullTerminatedString(at: offset + valueOffset)
+
+        if let url = url, let name = name, let value = value,
+           url.contains("claude.ai"), name == "sessionKey", !value.isEmpty {
+            return value
+        }
 
         return nil
     }
@@ -231,8 +396,30 @@ enum CookieExtractor {
     }
 }
 
-// MARK: - CommonCrypto C imports (add via bridging header or modulemap)
-// These are the function signatures we need. In the actual project,
-// import CommonCrypto via the bridging header.
-
 import CommonCrypto
+
+// MARK: - Data Helpers for Binary Cookie Parsing
+
+private extension Data {
+    func readBigUInt32(at offset: Int) -> UInt32 {
+        guard offset + 4 <= count else { return 0 }
+        return subdata(in: offset..<offset+4).withUnsafeBytes {
+            UInt32(bigEndian: $0.load(as: UInt32.self))
+        }
+    }
+
+    func readLittleUInt32(at offset: Int) -> UInt32 {
+        guard offset + 4 <= count else { return 0 }
+        return subdata(in: offset..<offset+4).withUnsafeBytes {
+            UInt32(littleEndian: $0.load(as: UInt32.self))
+        }
+    }
+
+    func readNullTerminatedString(at offset: Int) -> String? {
+        guard offset >= 0, offset < count else { return nil }
+        var end = offset
+        while end < count && self[end] != 0 { end += 1 }
+        guard end > offset else { return nil }
+        return String(data: subdata(in: offset..<end), encoding: .utf8)
+    }
+}

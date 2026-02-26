@@ -12,7 +12,9 @@ extension Color {
 struct UsagePopover: View {
     @ObservedObject var viewModel: ClaudeUsageViewModel
     @ObservedObject var settings: AppSettings
+    @ObservedObject var analytics: AnalyticsService
     @State private var showSettings = false
+    @State private var showFirstLaunchPrompt = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -22,7 +24,9 @@ struct UsagePopover: View {
             Divider()
                 .opacity(0.3)
 
-            if showSettings {
+            if showFirstLaunchPrompt {
+                firstLaunchPromptView
+            } else if showSettings {
                 settingsSection
             } else if viewModel.isAuthenticated {
                 if let usage = viewModel.usage {
@@ -68,6 +72,16 @@ struct UsagePopover: View {
             footerSection
         }
         .background(.ultraThinMaterial)
+        .onChange(of: viewModel.isAuthenticated) { _, authenticated in
+            if authenticated && !settings.hasCompletedFirstLaunch {
+                withAnimation { showFirstLaunchPrompt = true }
+            }
+        }
+        .onAppear {
+            if viewModel.isAuthenticated && !settings.hasCompletedFirstLaunch {
+                showFirstLaunchPrompt = true
+            }
+        }
     }
 
     // MARK: - Header
@@ -195,95 +209,28 @@ struct UsagePopover: View {
     }
 
     @State private var pastedKey: String = ""
-    @State private var isDetecting = false
-    @State private var detectError: String?
+    @State private var showInstructions = false
 
     private var notAuthenticatedView: some View {
-        VStack(spacing: 14) {
-            Image(systemName: "key")
-                .font(.system(size: 28))
-                .foregroundStyle(Color.claudeOrange.opacity(0.7))
+        VStack(spacing: 16) {
+            Image(systemName: "staroflife.fill")
+                .font(.system(size: 32))
+                .foregroundStyle(Color.claudeOrange)
+
             Text("Connect to Claude")
-                .font(.system(size: 13, weight: .medium))
+                .font(.system(size: 14, weight: .semibold))
 
-            // Auto-detect button
-            VStack(spacing: 6) {
-                Button {
-                    isDetecting = true
-                    detectError = nil
-                    Task {
-                        await viewModel.autoDetectSessionKey()
-                        isDetecting = false
-                        if !viewModel.isAuthenticated {
-                            detectError = "Could not find cookie. Grant Full Disk Access or paste manually."
-                        }
-                    }
-                } label: {
-                    HStack(spacing: 6) {
-                        if isDetecting {
-                            ProgressView()
-                                .scaleEffect(0.5)
-                                .frame(width: 12, height: 12)
-                        } else {
-                            Image(systemName: "bolt.fill")
-                                .font(.system(size: 11))
-                        }
-                        Text("Auto-Detect from Browser")
-                            .font(.system(size: 12, weight: .medium))
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 6)
-                }
-                .buttonStyle(.borderedProminent)
-                .tint(Color.claudeOrange)
-                .controlSize(.regular)
-                .padding(.horizontal, 16)
-                .disabled(isDetecting)
+            Text("Paste your session key to get started.")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
 
-                if let detectError {
-                    Text(detectError)
-                        .font(.system(size: 10))
-                        .foregroundStyle(.red.opacity(0.8))
-                        .multilineTextAlignment(.center)
-                        .padding(.horizontal, 16)
-
-                    Button {
-                        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")!)
-                    } label: {
-                        Text("Open Full Disk Access Settings")
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundStyle(Color.claudeOrange)
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                Text("Reads sessionKey cookie from Chrome or Firefox")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
-            }
-
-            // Divider with "or"
-            HStack {
-                Rectangle().fill(.quaternary).frame(height: 1)
-                Text("or")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
-                Rectangle().fill(.quaternary).frame(height: 1)
-            }
-            .padding(.horizontal, 24)
-
-            // Manual paste
             VStack(spacing: 8) {
-                Text("Paste your sessionKey manually:")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-
                 HStack(spacing: 6) {
                     SecureField("sk-ant-sid01-...", text: $pastedKey)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 11, design: .monospaced))
 
-                    Button("Go") {
+                    Button("Connect") {
                         viewModel.setSessionKey(pastedKey)
                         pastedKey = ""
                     }
@@ -294,10 +241,95 @@ struct UsagePopover: View {
                 }
                 .padding(.horizontal, 16)
 
-                Text("DevTools (Cmd+Opt+I) > Application > Cookies > claude.ai")
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showInstructions.toggle()
+                    }
+                } label: {
+                    Text(showInstructions ? "Hide instructions" : "How do I find this?")
+                        .font(.system(size: 10))
+                        .foregroundStyle(Color.claudeOrange)
+                }
+                .buttonStyle(HoverTextStyle(hoverColor: Color.claudeOrange))
+
+                if showInstructions {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Chrome:")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("1. Open claude.ai → Cmd+Opt+I")
+                            Text("2. Application → Cookies → claude.ai")
+                            Text("3. Copy the 'sessionKey' value")
+                        }
+
+                        Text("Safari:")
+                            .font(.system(size: 10, weight: .semibold))
+                            .foregroundStyle(.secondary)
+                            .padding(.top, 4)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("1. Enable Develop menu in Safari → Settings → Advanced")
+                            Text("2. Open claude.ai → Develop → Show Web Inspector")
+                            Text("3. Storage → Cookies → claude.ai")
+                            Text("4. Copy the 'sessionKey' value")
+                        }
+                    }
                     .font(.system(size: 10))
                     .foregroundStyle(.tertiary)
+                    .padding(.horizontal, 24)
+                }
             }
+        }
+    }
+
+    // MARK: - First Launch Prompt
+
+    private var firstLaunchPromptView: some View {
+        VStack(spacing: 20) {
+            Spacer()
+
+            Image(systemName: "checkmark.circle.fill")
+                .font(.system(size: 40))
+                .foregroundStyle(.green)
+
+            Text("You're all set!")
+                .font(.system(size: 16, weight: .semibold))
+
+            Text("Would you like ClaudeMeter to start automatically when you log in?")
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+                .multilineTextAlignment(.center)
+                .padding(.horizontal, 24)
+
+            VStack(spacing: 10) {
+                Button {
+                    settings.launchAtLogin = true
+                    try? SMAppService.mainApp.register()
+                    settings.hasCompletedFirstLaunch = true
+                    withAnimation { showFirstLaunchPrompt = false }
+                } label: {
+                    Text("Yes, launch at login")
+                        .font(.system(size: 13, weight: .medium))
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.claudeOrange)
+                .controlSize(.large)
+                .padding(.horizontal, 40)
+
+                Button {
+                    settings.hasCompletedFirstLaunch = true
+                    withAnimation { showFirstLaunchPrompt = false }
+                } label: {
+                    Text("Not now")
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                }
+                .buttonStyle(.plain)
+            }
+
+            Spacer()
         }
     }
 
@@ -327,7 +359,7 @@ struct UsagePopover: View {
                             }
                             .font(.system(size: 11))
                             .foregroundStyle(.red)
-                            .buttonStyle(.plain)
+                            .buttonStyle(HoverTextStyle(hoverColor: .red))
                         }
                     }
 
@@ -401,7 +433,7 @@ struct UsagePopover: View {
 
     private var footerSection: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 16) {
+            HStack(spacing: 4) {
                 Button {
                     if let url = URL(string: "https://claude.ai/settings/usage") {
                         NSWorkspace.shared.open(url)
@@ -410,7 +442,7 @@ struct UsagePopover: View {
                     Label("Usage Dashboard", systemImage: "chart.bar")
                         .font(.system(size: 11))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(HoverButtonStyle())
 
                 Spacer()
 
@@ -420,49 +452,68 @@ struct UsagePopover: View {
                     Image(systemName: "arrow.clockwise")
                         .font(.system(size: 11))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(HoverButtonStyle())
 
                 Button {
                     withAnimation(.easeInOut(duration: 0.2)) {
                         showSettings.toggle()
                     }
                 } label: {
-                    Label("Settings", systemImage: showSettings ? "xmark" : "gear")
+                    Image(systemName: showSettings ? "xmark" : "gear")
                         .font(.system(size: 11))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(HoverButtonStyle())
 
                 Button {
                     NSApplication.shared.terminate(nil)
                 } label: {
-                    Label("Quit", systemImage: "power")
+                    Image(systemName: "power")
                         .font(.system(size: 11))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(HoverButtonStyle())
             }
             .foregroundStyle(.secondary)
-            .padding(.horizontal, 16)
-            .padding(.vertical, 10)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
 
             Divider()
                 .opacity(0.3)
 
-            HStack(spacing: 4) {
-                Text("by")
-                    .font(.system(size: 9))
-                    .foregroundStyle(.tertiary)
-                Button {
-                    if let url = URL(string: "https://nikolytics.com") {
-                        NSWorkspace.shared.open(url)
+            ZStack {
+                // Nikolytics — always dead center
+                HStack(spacing: 4) {
+                    Text("by")
+                        .font(.system(size: 9))
+                        .foregroundStyle(.tertiary)
+                    Button {
+                        if let url = URL(string: "https://nikolytics.com") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    } label: {
+                        Text("Nikolytics")
+                            .font(.system(size: 9, weight: .medium))
+                            .foregroundStyle(Color.claudeOrange)
                     }
-                } label: {
-                    Text("Nikolytics")
-                        .font(.system(size: 9, weight: .medium))
-                        .foregroundStyle(Color.claudeOrange)
+                    .buttonStyle(HoverTextStyle(hoverColor: Color.claudeOrange))
                 }
-                .buttonStyle(.plain)
+
+                // Active users — pinned right
+                if analytics.activeUsers > 0 {
+                    HStack {
+                        Spacer()
+                        HStack(spacing: 3) {
+                            Circle()
+                                .fill(.green)
+                                .frame(width: 4, height: 4)
+                            Text("\(analytics.activeUsers) active")
+                                .font(.system(size: 8))
+                                .foregroundStyle(.quaternary)
+                        }
+                    }
+                }
             }
-            .padding(.vertical, 6)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 5)
         }
     }
 
@@ -513,6 +564,56 @@ struct UsageCard: View {
         .padding(12)
         .background(.quaternary.opacity(0.3))
         .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
+
+// MARK: - Hover Button Style
+
+struct HoverButtonStyle: ButtonStyle {
+    @State private var isHovered = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(isHovered ? Color.primary.opacity(0.08) : Color.clear)
+            )
+            .scaleEffect(configuration.isPressed ? 0.95 : 1.0)
+            .opacity(configuration.isPressed ? 0.7 : 1.0)
+            .onHover { hovering in
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    isHovered = hovering
+                }
+                if hovering {
+                    NSCursor.pointingHand.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
+    }
+}
+
+struct HoverTextStyle: ButtonStyle {
+    let hoverColor: Color
+
+    @State private var isHovered = false
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .underline(isHovered)
+            .opacity(configuration.isPressed ? 0.6 : (isHovered ? 1.0 : 0.8))
+            .onHover { hovering in
+                withAnimation(.easeInOut(duration: 0.15)) {
+                    isHovered = hovering
+                }
+                if hovering {
+                    NSCursor.pointingHand.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
     }
 }
 
