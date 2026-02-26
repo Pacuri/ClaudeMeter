@@ -91,9 +91,7 @@ Open Settings from the popover footer:
 
 ## Credits
 
-Made by [Nikola Popovic](https://github.com/nikolapopovic) & [Nix](https://github.com/nikolapopovic/claudes-life).
-
-Inspired by [CodexBar](https://github.com/steipete/CodexBar).
+Made by [Nikolytics](https://github.com/Pacuri) & Nix.
 
 ## License
 

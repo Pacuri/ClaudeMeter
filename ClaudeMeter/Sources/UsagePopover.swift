@@ -1,4 +1,5 @@
 import SwiftUI
+import ServiceManagement
 
 // Claude's brand orange
 extension Color {
@@ -11,7 +12,7 @@ extension Color {
 struct UsagePopover: View {
     @ObservedObject var viewModel: ClaudeUsageViewModel
     @ObservedObject var settings: AppSettings
-    @Environment(\.openSettings) private var openSettings
+    @State private var showSettings = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -21,7 +22,9 @@ struct UsagePopover: View {
             Divider()
                 .opacity(0.3)
 
-            if viewModel.isAuthenticated {
+            if showSettings {
+                settingsSection
+            } else if viewModel.isAuthenticated {
                 if let usage = viewModel.usage {
                     ScrollView(.vertical, showsIndicators: false) {
                         VStack(spacing: 16) {
@@ -230,6 +233,102 @@ struct UsagePopover: View {
         }
     }
 
+    // MARK: - Inline Settings
+
+    @State private var settingsKey: String = ""
+
+    private var settingsSection: some View {
+        ScrollView(.vertical, showsIndicators: false) {
+            VStack(spacing: 16) {
+                // Account
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Account")
+                        .font(.system(size: 13, weight: .semibold))
+
+                    if viewModel.isAuthenticated {
+                        HStack {
+                            Image(systemName: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                                .font(.system(size: 12))
+                            Text("Connected")
+                                .font(.system(size: 12))
+                                .foregroundStyle(.secondary)
+                            Spacer()
+                            Button("Disconnect") {
+                                viewModel.logout()
+                            }
+                            .font(.system(size: 11))
+                            .foregroundStyle(.red)
+                            .buttonStyle(.plain)
+                        }
+                    }
+
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text("Session Key")
+                            .font(.system(size: 11))
+                            .foregroundStyle(.secondary)
+                        HStack(spacing: 6) {
+                            SecureField("sk-ant-sid01-...", text: $settingsKey)
+                                .textFieldStyle(.roundedBorder)
+                                .font(.system(size: 11, design: .monospaced))
+                            Button("Set") {
+                                viewModel.setSessionKey(settingsKey)
+                                settingsKey = ""
+                            }
+                            .buttonStyle(.borderedProminent)
+                            .controlSize(.small)
+                            .tint(Color.claudeOrange)
+                            .disabled(settingsKey.isEmpty)
+                        }
+                    }
+                }
+                .padding(12)
+                .background(.quaternary.opacity(0.3))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                // Preferences
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Preferences")
+                        .font(.system(size: 13, weight: .semibold))
+
+                    Toggle("Show usage % in menu bar", isOn: settings.$showPercentInMenuBar)
+                        .font(.system(size: 12))
+
+                    HStack {
+                        Text("Refresh interval")
+                            .font(.system(size: 12))
+                        Spacer()
+                        Picker("", selection: settings.$refreshInterval) {
+                            Text("30s").tag(30.0)
+                            Text("1m").tag(60.0)
+                            Text("2m").tag(120.0)
+                            Text("5m").tag(300.0)
+                        }
+                        .pickerStyle(.segmented)
+                        .frame(width: 180)
+                        .onChange(of: settings.refreshInterval) { _, newValue in
+                            viewModel.setRefreshInterval(newValue)
+                        }
+                    }
+
+                    Toggle("Launch at login", isOn: settings.$launchAtLogin)
+                        .font(.system(size: 12))
+                        .onChange(of: settings.launchAtLogin) { _, enabled in
+                            if enabled {
+                                try? SMAppService.mainApp.register()
+                            } else {
+                                try? SMAppService.mainApp.unregister()
+                            }
+                        }
+                }
+                .padding(12)
+                .background(.quaternary.opacity(0.3))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+            }
+            .padding(16)
+        }
+    }
+
     // MARK: - Footer
 
     private var footerSection: some View {
@@ -255,9 +354,11 @@ struct UsagePopover: View {
             .buttonStyle(.plain)
 
             Button {
-                openSettings()
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    showSettings.toggle()
+                }
             } label: {
-                Label("Settings", systemImage: "gear")
+                Label("Settings", systemImage: showSettings ? "xmark" : "gear")
                     .font(.system(size: 11))
             }
             .buttonStyle(.plain)
