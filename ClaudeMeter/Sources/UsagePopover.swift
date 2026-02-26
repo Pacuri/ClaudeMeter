@@ -195,20 +195,88 @@ struct UsagePopover: View {
     }
 
     @State private var pastedKey: String = ""
+    @State private var isDetecting = false
+    @State private var detectError: String?
 
     private var notAuthenticatedView: some View {
         VStack(spacing: 14) {
             Image(systemName: "key")
                 .font(.system(size: 28))
                 .foregroundStyle(Color.claudeOrange.opacity(0.7))
-            Text("Session key needed")
+            Text("Connect to Claude")
                 .font(.system(size: 13, weight: .medium))
 
+            // Auto-detect button
+            VStack(spacing: 6) {
+                Button {
+                    isDetecting = true
+                    detectError = nil
+                    Task {
+                        await viewModel.autoDetectSessionKey()
+                        isDetecting = false
+                        if !viewModel.isAuthenticated {
+                            detectError = "Could not find cookie. Grant Full Disk Access or paste manually."
+                        }
+                    }
+                } label: {
+                    HStack(spacing: 6) {
+                        if isDetecting {
+                            ProgressView()
+                                .scaleEffect(0.5)
+                                .frame(width: 12, height: 12)
+                        } else {
+                            Image(systemName: "bolt.fill")
+                                .font(.system(size: 11))
+                        }
+                        Text("Auto-Detect from Browser")
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 6)
+                }
+                .buttonStyle(.borderedProminent)
+                .tint(Color.claudeOrange)
+                .controlSize(.regular)
+                .padding(.horizontal, 16)
+                .disabled(isDetecting)
+
+                if let detectError {
+                    Text(detectError)
+                        .font(.system(size: 10))
+                        .foregroundStyle(.red.opacity(0.8))
+                        .multilineTextAlignment(.center)
+                        .padding(.horizontal, 16)
+
+                    Button {
+                        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")!)
+                    } label: {
+                        Text("Open Full Disk Access Settings")
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundStyle(Color.claudeOrange)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                Text("Reads sessionKey cookie from Chrome or Firefox")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+            }
+
+            // Divider with "or"
+            HStack {
+                Rectangle().fill(.quaternary).frame(height: 1)
+                Text("or")
+                    .font(.system(size: 10))
+                    .foregroundStyle(.tertiary)
+                Rectangle().fill(.quaternary).frame(height: 1)
+            }
+            .padding(.horizontal, 24)
+
+            // Manual paste
             VStack(spacing: 8) {
-                Text("Paste your sessionKey from claude.ai cookies:")
+                Text("Paste your sessionKey manually:")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
 
                 HStack(spacing: 6) {
                     SecureField("sk-ant-sid01-...", text: $pastedKey)

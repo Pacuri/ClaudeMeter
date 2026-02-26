@@ -9,7 +9,7 @@ struct ClaudeMeterApp: App {
     var body: some Scene {
         MenuBarExtra {
             UsagePopover(viewModel: viewModel, settings: settings)
-                .frame(width: 320, height: 460)
+                .frame(width: 320, height: 500)
         } label: {
             MenuBarLabel(viewModel: viewModel)
         }
