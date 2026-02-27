@@ -12,9 +12,7 @@ class ClaudeUsageViewModel: ObservableObject {
     private var client: ClaudeAPIClient?
     private var refreshTimer: Timer?
     private var refreshInterval: TimeInterval = 60  // 1 minute default
-    private var loginController: LoginWindowController?
-
-    @Published var authMethod: String = ""  // "oauth", "cookie", "manual"
+    @Published var authMethod: String = ""  // "manual"
 
     init() {
         loadAuth()

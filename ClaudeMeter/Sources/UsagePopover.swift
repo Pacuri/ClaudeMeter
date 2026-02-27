@@ -210,6 +210,16 @@ struct UsagePopover: View {
 
     @State private var pastedKey: String = ""
     @State private var showInstructions = false
+    @State private var userEmail: String = ""
+    @State private var userUseCase: String = "Hobbyist"
+    @State private var licenseKey: String = ""
+    @State private var onboardingStep: Int = {
+        // Skip straight to session key if already licensed
+        UserDefaults.standard.bool(forKey: "licenseVerified") ? 3 : 1
+    }()  // 1 = email, 2 = license key, 3 = session key
+    @State private var keySent = false
+
+    private let useCaseOptions = ["Hobbyist", "Business", "Developer", "Student", "Researcher"]
 
     private var notAuthenticatedView: some View {
         VStack(spacing: 16) {
@@ -217,66 +227,218 @@ struct UsagePopover: View {
                 .font(.system(size: 32))
                 .foregroundStyle(Color.claudeOrange)
 
-            Text("Connect to Claude")
+            Text("Welcome to ClaudeMeter")
                 .font(.system(size: 14, weight: .semibold))
 
-            Text("Paste your session key to get started.")
-                .font(.system(size: 12))
-                .foregroundStyle(.secondary)
+            if onboardingStep == 1 {
+                // Step 1: Email + use case → request license key
+                Text("Get your free license key.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
 
-            VStack(spacing: 8) {
-                HStack(spacing: 6) {
-                    SecureField("sk-ant-sid01-...", text: $pastedKey)
+                VStack(spacing: 12) {
+                    TextField("Email address", text: $userEmail)
                         .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(.system(size: 12))
+                        .padding(.horizontal, 24)
 
-                    Button("Connect") {
-                        viewModel.setSessionKey(pastedKey)
-                        pastedKey = ""
+                    HStack {
+                        Text("I use Claude for")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.secondary)
+                        Picker("", selection: $userUseCase) {
+                            ForEach(useCaseOptions, id: \.self) { option in
+                                Text(option).tag(option)
+                            }
+                        }
+                        .pickerStyle(.menu)
+                        .frame(width: 130)
+                    }
+                    .padding(.horizontal, 24)
+
+                    Button {
+                        Task {
+                            let success = await analytics.requestLicenseKey(email: userEmail, useCase: userUseCase)
+                            if success {
+                                keySent = true
+                                withAnimation { onboardingStep = 2 }
+                            }
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            if analytics.isRequestingKey {
+                                ProgressView()
+                                    .scaleEffect(0.6)
+                                    .frame(width: 14, height: 14)
+                            }
+                            Text(analytics.isRequestingKey ? "Sending..." : "Send me my free license key")
+                                .font(.system(size: 13, weight: .medium))
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 8)
                     }
                     .buttonStyle(.borderedProminent)
-                    .controlSize(.small)
                     .tint(Color.claudeOrange)
-                    .disabled(pastedKey.isEmpty)
-                }
-                .padding(.horizontal, 16)
-
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        showInstructions.toggle()
-                    }
-                } label: {
-                    Text(showInstructions ? "Hide instructions" : "How do I find this?")
-                        .font(.system(size: 10))
-                        .foregroundStyle(Color.claudeOrange)
-                }
-                .buttonStyle(HoverTextStyle(hoverColor: Color.claudeOrange))
-
-                if showInstructions {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text("Chrome:")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("1. Open claude.ai → Cmd+Opt+I")
-                            Text("2. Application → Cookies → claude.ai")
-                            Text("3. Copy the 'sessionKey' value")
-                        }
-
-                        Text("Safari:")
-                            .font(.system(size: 10, weight: .semibold))
-                            .foregroundStyle(.secondary)
-                            .padding(.top, 4)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("1. Enable Develop menu in Safari → Settings → Advanced")
-                            Text("2. Open claude.ai → Develop → Show Web Inspector")
-                            Text("3. Storage → Cookies → claude.ai")
-                            Text("4. Copy the 'sessionKey' value")
-                        }
-                    }
-                    .font(.system(size: 10))
-                    .foregroundStyle(.tertiary)
+                    .controlSize(.large)
                     .padding(.horizontal, 24)
+                    .disabled(userEmail.isEmpty || !userEmail.contains("@") || analytics.isRequestingKey)
+
+                    if let error = analytics.licenseError {
+                        Text(error)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.red)
+                    }
+
+                    Button {
+                        withAnimation { onboardingStep = 2 }
+                    } label: {
+                        Text("I already have a license key")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(HoverTextStyle(hoverColor: .secondary))
+                }
+
+            } else if onboardingStep == 2 {
+                // Step 2: Enter license key from email
+                VStack(spacing: 4) {
+                    Text("Check your email")
+                        .font(.system(size: 12, weight: .medium))
+                    Text("We sent a license key to \(userEmail)")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+
+                VStack(spacing: 10) {
+                    HStack(spacing: 6) {
+                        TextField("CM-XXXX-XXXX-XXXX", text: $licenseKey)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 12, design: .monospaced))
+
+                        Button {
+                            Task {
+                                let valid = await analytics.verifyLicenseKey(licenseKey)
+                                if valid {
+                                    withAnimation { onboardingStep = 3 }
+                                }
+                            }
+                        } label: {
+                            if analytics.isVerifyingKey {
+                                ProgressView()
+                                    .scaleEffect(0.6)
+                                    .frame(width: 40, height: 14)
+                            } else {
+                                Text("Activate")
+                            }
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .tint(Color.claudeOrange)
+                        .disabled(licenseKey.isEmpty || analytics.isVerifyingKey)
+                    }
+                    .padding(.horizontal, 16)
+
+                    if let error = analytics.licenseError {
+                        Text(error)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.red)
+                    }
+
+                    Button {
+                        Task {
+                            analytics.licenseError = nil
+                            let _ = await analytics.requestLicenseKey(email: userEmail, useCase: userUseCase)
+                        }
+                    } label: {
+                        Text("Resend key")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Color.claudeOrange)
+                    }
+                    .buttonStyle(HoverTextStyle(hoverColor: Color.claudeOrange))
+
+                    HStack(spacing: 12) {
+                        Button {
+                            withAnimation { onboardingStep = 1 }
+                        } label: {
+                            Text("Use different email")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(HoverTextStyle(hoverColor: .secondary))
+
+                        Button {
+                            if let url = URL(string: "mailto:hello@nikolytics.com?subject=ClaudeMeter%20License%20Key%20Help") {
+                                NSWorkspace.shared.open(url)
+                            }
+                        } label: {
+                            Text("Need help?")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                        }
+                        .buttonStyle(HoverTextStyle(hoverColor: .secondary))
+                    }
+                }
+
+            } else {
+                // Step 3: Session key
+                Text("Paste your session key to connect.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
+
+                VStack(spacing: 8) {
+                    HStack(spacing: 6) {
+                        SecureField("sk-ant-sid01-...", text: $pastedKey)
+                            .textFieldStyle(.roundedBorder)
+                            .font(.system(size: 11, design: .monospaced))
+
+                        Button("Connect") {
+                            viewModel.setSessionKey(pastedKey)
+                            pastedKey = ""
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .controlSize(.small)
+                        .tint(Color.claudeOrange)
+                        .disabled(pastedKey.isEmpty)
+                    }
+                    .padding(.horizontal, 16)
+
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            showInstructions.toggle()
+                        }
+                    } label: {
+                        Text(showInstructions ? "Hide instructions" : "How do I find this?")
+                            .font(.system(size: 10))
+                            .foregroundStyle(Color.claudeOrange)
+                    }
+                    .buttonStyle(HoverTextStyle(hoverColor: Color.claudeOrange))
+
+                    if showInstructions {
+                        VStack(alignment: .leading, spacing: 6) {
+                            Text("Chrome:")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("1. Open claude.ai → Cmd+Opt+I")
+                                Text("2. Application → Cookies → claude.ai")
+                                Text("3. Copy the 'sessionKey' value")
+                            }
+
+                            Text("Safari:")
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(.secondary)
+                                .padding(.top, 4)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("1. Enable Develop menu in Safari → Settings → Advanced")
+                                Text("2. Open claude.ai → Develop → Show Web Inspector")
+                                Text("3. Storage → Cookies → claude.ai")
+                                Text("4. Copy the 'sessionKey' value")
+                            }
+                        }
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
+                        .padding(.horizontal, 24)
+                    }
                 }
             }
         }
@@ -420,6 +582,34 @@ struct UsagePopover: View {
                                 try? SMAppService.mainApp.unregister()
                             }
                         }
+                }
+                .padding(12)
+                .background(.quaternary.opacity(0.3))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+
+                // Support
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Support")
+                        .font(.system(size: 13, weight: .semibold))
+
+                    Button {
+                        if let url = URL(string: "mailto:hello@nikolytics.com") {
+                            NSWorkspace.shared.open(url)
+                        }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "envelope")
+                                .font(.system(size: 11))
+                            Text("hello@nikolytics.com")
+                                .font(.system(size: 12))
+                        }
+                        .foregroundStyle(Color.claudeOrange)
+                    }
+                    .buttonStyle(HoverTextStyle(hoverColor: Color.claudeOrange))
+
+                    Text("Questions, feedback, or license key issues")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.tertiary)
                 }
                 .padding(12)
                 .background(.quaternary.opacity(0.3))
@@ -592,6 +782,12 @@ struct HoverButtonStyle: ButtonStyle {
                     NSCursor.pop()
                 }
             }
+            .onDisappear {
+                if isHovered {
+                    NSCursor.pop()
+                    isHovered = false
+                }
+            }
     }
 }
 
@@ -612,6 +808,12 @@ struct HoverTextStyle: ButtonStyle {
                     NSCursor.pointingHand.push()
                 } else {
                     NSCursor.pop()
+                }
+            }
+            .onDisappear {
+                if isHovered {
+                    NSCursor.pop()
+                    isHovered = false
                 }
             }
     }

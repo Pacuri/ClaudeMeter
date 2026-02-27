@@ -11,7 +11,6 @@ let package = Package(
             name: "ClaudeMeter",
             path: "ClaudeMeter/Sources",
             linkerSettings: [
-                .linkedFramework("Security"),
                 .linkedFramework("AppKit"),
                 .linkedFramework("SwiftUI")
             ]
