@@ -18,40 +18,57 @@ A native macOS menu bar app that tracks your Claude Pro/Max subscription usage i
 - **Extra usage** spend tracking when enabled
 - **Auto-refresh** every 60 seconds (configurable)
 - **Launch at Login** support
-- **Privacy-first** — everything runs locally, your session key never leaves your machine
+- **Privacy-first** — your session key never leaves your machine
 
 ## Install
 
 ### Download (easiest)
 
-1. Go to [Releases](https://github.com/Pacuri/ClaudeMeter/releases) and download `ClaudeMeter.app.zip`
+1. Go to [Releases](https://github.com/Pacuri/ClaudeMeter/releases/latest) and download `ClaudeMeter.app.zip`
 2. Unzip and drag to Applications
 3. **Important:** Right-click the app > **Open** (first launch only — macOS blocks unsigned apps by default)
 
 ### Build from source
 
-1. Clone this repo
-2. Open in Xcode (File > Open > select the `ClaudeMeter` folder)
-3. Build & Run (Cmd+R)
-4. ClaudeMeter appears in your menu bar
+```bash
+git clone https://github.com/Pacuri/ClaudeMeter.git
+cd ClaudeMeter
+swift build -c release
+```
+
+Or open in Xcode and hit Cmd+R.
 
 **Requirements:** macOS 14.0+ (Sonoma), Xcode 15+, active Claude Pro or Max subscription.
 
 ## Setup
 
-1. Launch ClaudeMeter — a gauge icon appears in your menu bar
-2. Click it and paste your `sessionKey`:
-   - Open [claude.ai](https://claude.ai) in Chrome/Safari/Firefox
-   - Open DevTools (`Cmd+Option+I`)
-   - Go to **Application** tab > **Cookies** > **claude.ai**
-   - Copy the `sessionKey` value
-   - Paste it in ClaudeMeter and click **Go**
+ClaudeMeter uses a 3-step setup:
+
+### 1. Get your free license key
+Enter your email and how you use Claude. We'll send a license key to your inbox instantly.
+
+### 2. Activate
+Paste the license key from your email (format: `CM-XXXX-XXXX-XXXX`).
+
+### 3. Connect to Claude
+Paste your session key from claude.ai:
+
+**Chrome:**
+1. Open [claude.ai](https://claude.ai) and press `Cmd+Option+I`
+2. Go to **Application** tab > **Cookies** > **claude.ai**
+3. Copy the `sessionKey` value
+
+**Safari:**
+1. Enable the Develop menu in Safari > Settings > Advanced
+2. Open [claude.ai](https://claude.ai) > Develop > Show Web Inspector
+3. Go to **Storage** > **Cookies** > **claude.ai**
+4. Copy the `sessionKey` value
 
 The session key is stored locally on your Mac. You may need to re-paste it when it expires (roughly every 2 weeks).
 
 ## How it works
 
-ClaudeMeter calls the same internal API endpoints that claude.ai uses to show your usage. No third-party servers, no proxies, no data collection. Your session key stays on your machine.
+ClaudeMeter calls the same internal API endpoints that claude.ai uses to show your usage. No third-party servers, no proxies. Your session key stays on your machine.
 
 ## Settings
 
@@ -62,12 +79,9 @@ Click the gear icon in the popover footer:
 - **Launch at Login** — start ClaudeMeter when you log in
 - **Session key** — update or disconnect your session
 
-## Privacy
+## Support
 
-- Session key stored locally in UserDefaults
-- Only network calls are to `claude.ai`
-- No analytics, no telemetry, no third-party services
-- Fully open source — read every line
+Having trouble? Email us at **hello@nikolytics.com** — we're happy to help with license keys, setup issues, or anything else.
 
 ## Tech
 
@@ -75,12 +89,11 @@ Click the gear icon in the popover footer:
 - `MenuBarExtra` with `.window` style
 - Custom Core Graphics gauge renderer for the menu bar icon
 - `SMAppService` for Launch at Login
-- `CommonCrypto` for Chrome cookie decryption
 - Zero external dependencies
 
 ## Credits
 
-Made by [Nikolytics](https://github.com/Pacuri) & Nix.
+Made by [Nikolytics](https://nikolytics.com).
 
 ## License
 
